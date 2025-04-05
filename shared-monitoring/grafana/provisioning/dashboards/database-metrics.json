@@ -1,0 +1,136 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Database CPU Usage",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percent"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=~\"postgres|mysql\"}[1m]) * 100",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "title": "Database Memory Usage",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=~\"postgres|mysql\"}",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "title": "Database Connections",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "pg_stat_activity_count{job=\"postgres\"}",
+          "legendFormat": "PostgreSQL"
+        },
+        {
+          "expr": "mysql_global_status_threads_connected{job=\"mysql\"}",
+          "legendFormat": "MySQL"
+        }
+      ]
+    },
+    {
+      "title": "PostgreSQL Autovacuum Activity",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "pg_stat_activity_count{state=\"autovacuum\"}",
+          "legendFormat": "Autovacuum Workers"
+        }
+      ]
+    },
+    {
+      "title": "MySQL InnoDB Buffer Pool",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "mysql_global_status_innodb_buffer_pool_pages_total",
+          "legendFormat": "Total Pages"
+        },
+        {
+          "expr": "mysql_global_status_innodb_buffer_pool_pages_free",
+          "legendFormat": "Free Pages"
+        }
+      ]
+    },
+    {
+      "title": "Hydra Response Times",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(http_request_duration_seconds_sum{job=~\"hydra-.*\"}[5m]) / rate(http_request_duration_seconds_count{job=~\"hydra-.*\"}[5m])",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["databases", "hydra"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Database Performance Metrics",
+  "version": 1,
+  "weekStart": ""
+}

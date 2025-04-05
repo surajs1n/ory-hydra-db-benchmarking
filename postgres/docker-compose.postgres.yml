@@ -1,0 +1,79 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:17.2
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_USER: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./init-db:/docker-entrypoint-initdb.d
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+    ports:
+      - "5432:5432"
+
+  hydra-migrate:
+    image: oryd/hydra:v2.3.0
+    environment:
+      - DSN=postgres://postgres:secret@postgres:5432/oauth2-oidc?sslmode=disable
+    command: migrate sql -e --yes
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  hydra:
+    image: oryd/hydra:v2.3.0
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    ports:
+      - "4444:4444"  # Public API
+      - "4445:4445"  # Admin API
+    environment:
+      - DSN=postgres://postgres:secret@postgres:5432/oauth2-oidc?sslmode=disable
+      - SERVE_PUBLIC_CORS_ENABLED=true
+      - SERVE_ADMIN_CORS_ENABLED=true
+      - URLS_SELF_ISSUER=http://localhost:4444/
+      - URLS_CONSENT=http://localhost:3000/consent
+      - URLS_LOGIN=http://localhost:3000/login
+      - LOG_LEVEL=debug
+      - SECRETS_SYSTEM=somesupersecret123456
+      - SERVE_PUBLIC_TLS_ENABLED=false
+      - SERVE_ADMIN_TLS_ENABLED=false
+      - DEV=true
+    command: serve all --dev
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:secret@postgres:5432/oauth2-oidc?sslmode=disable"
+    ports:
+      - "9187:9187"
+
+networks:
+  default:
+    external: true
+    name: hydra_benchmark_network
+
+volumes:
+  postgres_data:

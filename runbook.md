@@ -1,0 +1,291 @@
+# ORY Hydra Database Performance Benchmarking Runbook
+
+This runbook provides detailed instructions for setting up, running, and monitoring the ORY Hydra database performance benchmarking experiments.
+
+## Prerequisites
+
+- Docker and Docker Compose installed
+- At least 8GB of free RAM
+- At least 4 CPU cores available
+- Ports 3306, 4444, 4445, 5432, 9090, 9104, 9187, and 3000 available
+
+## Network Setup
+
+### 1. Create Shared Network
+```bash
+# Create the shared network that all services will use
+docker network create hydra_benchmark_network
+
+# Verify network creation
+docker network ls | grep hydra_benchmark_network
+```
+
+### 2. Network Verification
+Before starting experiments, verify network configuration:
+```bash
+# List all networks
+docker network ls
+
+# Inspect the benchmark network
+docker network inspect hydra_benchmark_network
+```
+
+## Sequential Experiment Setup
+
+### 1. Start Monitoring Stack First
+```bash
+# Navigate to monitoring directory
+cd shared-monitoring
+
+# Start monitoring services
+docker-compose -f docker-compose.monitoring.yml up -d
+
+# Verify monitoring services are running
+docker-compose -f docker-compose.monitoring.yml ps
+
+# Check logs for any issues
+docker-compose -f docker-compose.monitoring.yml logs -f
+
+# Verify Prometheus targets
+curl -s http://localhost:9090/api/v1/targets | grep "health"
+
+# Access monitoring interfaces
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:3000 (default credentials: admin/admin)
+
+# Verify Prometheus can reach its targets
+# Open http://localhost:9090/targets and check all targets are UP
+```
+
+### 2. PostgreSQL Experiment
+```bash
+# Navigate to PostgreSQL directory
+cd ../postgres
+
+# Start PostgreSQL stack
+docker-compose -f docker-compose.postgres.yml up -d
+
+# Verify services are running
+docker-compose -f docker-compose.postgres.yml ps
+
+# Monitor logs
+docker-compose -f docker-compose.postgres.yml logs -f
+
+# Verify metrics are being collected
+curl -s http://localhost:9187/metrics | grep "pg_up"
+
+# Run your experiments...
+
+# When experiment is complete, bring down PostgreSQL stack
+docker-compose -f docker-compose.postgres.yml down
+```
+
+### 3. MySQL Experiment
+```bash
+# Navigate to MySQL directory
+cd ../mysql
+
+# Start MySQL stack
+docker-compose -f docker-compose.mysql.yml up -d
+
+# Verify services are running
+docker-compose -f docker-compose.mysql.yml ps
+
+# Monitor logs
+docker-compose -f docker-compose.mysql.yml logs -f
+
+# Verify metrics are being collected
+curl -s http://localhost:9104/metrics | grep "mysql_up"
+
+# Run your experiments...
+
+# When experiment is complete, bring down MySQL stack
+docker-compose -f docker-compose.mysql.yml down
+```
+
+### 4. Final Cleanup
+```bash
+# Stop monitoring stack
+cd ../shared-monitoring
+docker-compose -f docker-compose.monitoring.yml down
+
+# Remove shared network
+docker network rm hydra_benchmark_network
+
+# Verify cleanup
+docker network ls | grep hydra_benchmark_network
+docker ps -a | grep -E "mysql|postgres|prometheus|grafana"
+```
+
+### 5. Monitoring Stack Management
+
+The monitoring stack runs continuously during experiments. Access the monitoring interfaces at:
+
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (default credentials: admin/admin)
+
+Key monitoring tasks:
+1. Check Prometheus targets status
+2. Monitor metrics collection
+3. View Grafana dashboards
+4. Check for any connection issues between services
+
+## Verification Steps
+
+### 1. Network Connectivity
+```bash
+# Check if containers can reach each other
+docker exec -it shared-monitoring-prometheus-1 ping postgres-postgres-1
+docker exec -it shared-monitoring-prometheus-1 ping mysql-mysql-1
+
+# Verify Prometheus can scrape metrics
+curl -s http://localhost:9090/api/v1/targets | jq .
+```
+
+### 2. Database Connectivity
+
+#### PostgreSQL
+```bash
+# Connect to PostgreSQL
+docker exec -it postgres_postgres_1 psql -U postgres -d oauth2-oidc
+
+# Check if Hydra tables are created
+\dt
+
+# Check database size
+SELECT pg_size_pretty(pg_database_size('oauth2-oidc'));
+
+# Check active connections
+SELECT count(*) FROM pg_stat_activity WHERE datname = 'oauth2-oidc';
+```
+
+#### MySQL
+```bash
+# Connect to MySQL
+docker exec -it mysql_mysql_1 mysql -u root -psecret oauth2-oidc
+
+# Check if Hydra tables are created
+SHOW TABLES;
+
+# Check database size
+SELECT table_schema "oauth2-oidc", 
+       ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) "Size (MB)" 
+FROM information_schema.TABLES 
+WHERE table_schema = "oauth2-oidc"
+GROUP BY table_schema;
+
+# Check active connections
+SHOW STATUS WHERE Variable_name = 'Threads_connected';
+```
+
+### 2. Verify Hydra API
+
+```bash
+# Check Hydra health status (PostgreSQL setup)
+curl http://localhost:4445/health/ready
+
+# Check Hydra health status (MySQL setup)
+curl http://localhost:4445/health/ready
+```
+
+### 3. Verify Metrics Collection
+
+1. Open Prometheus (http://localhost:9090)
+2. Go to Status > Targets to verify all exporters are up
+3. Try some test queries:
+   - Database metrics:
+     ```
+     rate(process_cpu_seconds_total{job="postgres"}[1m])
+     mysql_global_status_threads_connected
+     ```
+   - Hydra metrics (via admin API):
+     ```
+     rate(http_request_duration_seconds_count{job=~"hydra-.*"}[5m])
+     ```
+
+4. Open Grafana (http://localhost:3000)
+5. Navigate to the "Database Performance Metrics" dashboard
+6. Verify metrics are being displayed
+
+Note: Hydra metrics are now collected via the `/admin/metrics/prometheus` endpoint, which is the correct endpoint for accessing Hydra's Prometheus metrics through its admin API.
+
+## Monitoring Key Metrics
+
+### PostgreSQL Metrics
+- Container name: `postgres-postgres_exporter-1:9187`
+1. **Autovacuum Activity**
+   - Prometheus query: `pg_stat_activity_count{state="autovacuum"}`
+   - Check for regular autovacuum runs
+
+2. **Buffer Usage**
+   - Prometheus query: `pg_stat_bgwriter_buffers_backend_fsync`
+
+3. **Transaction Throughput**
+   - Prometheus query: `rate(pg_stat_database_xact_commit[5m])`
+
+### MySQL Metrics
+- Container name: `mysql-mysqld_exporter-1:9104`
+1. **InnoDB Purge Threads**
+   - Prometheus query: `mysql_global_status_innodb_purge_threads`
+
+2. **Buffer Pool Usage**
+   - Prometheus query: `mysql_global_status_innodb_buffer_pool_pages_total - mysql_global_status_innodb_buffer_pool_pages_free`
+
+3. **Transaction Throughput**
+   - Prometheus query: `rate(mysql_global_status_com_commit[5m])`
+
+### Hydra Metrics
+- PostgreSQL setup: `postgres-hydra-1:4445/admin/metrics/prometheus`
+- MySQL setup: `mysql-hydra-1:4445/admin/metrics/prometheus`
+1. **Request Duration**
+   - Prometheus query: `rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])`
+
+2. **Request Rate**
+   - Prometheus query: `rate(http_request_duration_seconds_count{job=~"hydra-.*"}[5m])`
+
+3. **Error Rate**
+   - Prometheus query: `sum(rate(http_request_duration_seconds_count{job=~"hydra-.*",code=~"5.*"}[5m]))`
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Services fail to start**
+   - Check for port conflicts
+   - Ensure enough system resources are available
+   - Review logs: `docker-compose -f docker-compose.<db>.yml logs`
+
+2. **Database connection issues**
+   - Verify network connectivity between containers
+   - Check database logs for authentication errors
+   - Ensure database initialization completed successfully
+
+3. **Metrics not appearing**
+   - Check exporter connectivity in Prometheus targets
+   - Verify exporter is running: `docker ps | grep exporter`
+   - Check exporter logs: `docker logs <exporter-container-id>`
+
+4. **Hydra migration failures**
+   - Check Hydra logs: `docker logs <hydra-container-id>`
+   - Verify database credentials and permissions
+   - Ensure database is accessible from Hydra container
+
+## Cleanup
+
+To stop and remove all containers, networks, and volumes:
+
+```bash
+# PostgreSQL stack
+cd postgres
+docker-compose -f docker-compose.postgres.yml down -v
+
+# MySQL stack
+cd ../mysql
+docker-compose -f docker-compose.mysql.yml down -v
+
+# Finally, stop monitoring stack when all experiments are complete
+cd ../shared-monitoring
+docker-compose -f docker-compose.monitoring.yml down -v
+```
+
+Note: Using `down -v` will remove the volumes. If you want to preserve the metrics data for later analysis, omit the `-v` flag.

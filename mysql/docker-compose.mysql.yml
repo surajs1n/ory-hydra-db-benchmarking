@@ -1,0 +1,56 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.4.3
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: oauth2-oidc
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./my.cnf:/etc/mysql/conf.d/custom.cnf
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+    ports:
+      - "3306:3306"
+
+  hydra:
+    image: oryd/hydra:v2.3.0
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    ports:
+      - "4444:4444"  # Public API
+      - "4445:4445"  # Admin API
+    environment:
+      - DSN=mysql://root:secret@tcp(mysql:3306)/oauth2-oidc
+      - SERVE_PUBLIC_CORS_ENABLED=true
+      - SERVE_ADMIN_CORS_ENABLED=true
+      - URLS_SELF_ISSUER=https://localhost:4444/
+      - URLS_CONSENT=http://localhost:3000/consent
+      - URLS_LOGIN=http://localhost:3000/login
+      - LOG_LEVEL=debug
+      - SECRETS_SYSTEM=somesupersecret123456
+      - DSN_MIGRATIONS=mysql://root:secret@tcp(mysql:3306)/oauth2-oidc
+      - AUTO_MIGRATE=true
+    depends_on:
+      - mysql
+
+  mysqld_exporter:
+    image: prom/mysqld-exporter
+    environment:
+      DATA_SOURCE_NAME: "root:secret@(mysql:3306)/"
+    ports:
+      - "9104:9104"
+
+networks:
+  default:
+    external: true
+    name: hydra_benchmark_network
+
+volumes:
+  mysql_data:
