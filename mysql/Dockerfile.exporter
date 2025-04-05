@@ -1,0 +1,9 @@
+FROM prom/mysqld-exporter:v0.15.0
+
+USER root
+RUN echo -e "[client]\nuser=root\npassword=secret\nhost=mysql\nport=3306" > /etc/.my.cnf && \
+    chmod 644 /etc/.my.cnf
+USER nobody
+
+ENTRYPOINT [ "/bin/mysqld_exporter" ]
+CMD [ "--config.my-cnf=/etc/.my.cnf", "--collect.info_schema.tables", "--collect.info_schema.innodb_metrics", "--collect.global_status", "--collect.global_variables", "--collect.perf_schema.tableiowaits", "--collect.perf_schema.indexiowaits", "--collect.perf_schema.tablelocks" ]

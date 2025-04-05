@@ -8,6 +8,11 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./my.cnf:/etc/mysql/conf.d/custom.cnf
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
@@ -15,6 +20,15 @@ services:
           memory: 4G
     ports:
       - "3306:3306"
+
+  hydra-migrate:
+    image: oryd/hydra:v2.3.0
+    environment:
+      - DSN=mysql://root:secret@tcp(mysql:3306)/oauth2-oidc
+    command: migrate sql -e --yes
+    depends_on:
+      mysql:
+        condition: service_healthy
 
   hydra:
     image: oryd/hydra:v2.3.0
@@ -30,22 +44,30 @@ services:
       - DSN=mysql://root:secret@tcp(mysql:3306)/oauth2-oidc
       - SERVE_PUBLIC_CORS_ENABLED=true
       - SERVE_ADMIN_CORS_ENABLED=true
-      - URLS_SELF_ISSUER=https://localhost:4444/
+      - URLS_SELF_ISSUER=http://localhost:4444/
       - URLS_CONSENT=http://localhost:3000/consent
       - URLS_LOGIN=http://localhost:3000/login
       - LOG_LEVEL=debug
       - SECRETS_SYSTEM=somesupersecret123456
-      - DSN_MIGRATIONS=mysql://root:secret@tcp(mysql:3306)/oauth2-oidc
-      - AUTO_MIGRATE=true
+      - SERVE_PUBLIC_TLS_ENABLED=false
+      - SERVE_ADMIN_TLS_ENABLED=false
+      - DEV=true
+    command: serve all --dev
     depends_on:
-      - mysql
+      hydra-migrate:
+        condition: service_completed_successfully
 
-  mysqld_exporter:
-    image: prom/mysqld-exporter
-    environment:
-      DATA_SOURCE_NAME: "root:secret@(mysql:3306)/"
+  mysql_exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile.exporter
+    container_name: mysql-mysqld_exporter-1
+    restart: unless-stopped
     ports:
       - "9104:9104"
+    depends_on:
+      mysql:
+        condition: service_healthy
 
 networks:
   default:
