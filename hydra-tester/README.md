@@ -74,9 +74,9 @@ The default configuration is in `config/default_config.json`. You can override i
         "skip_consent": true
     },
     "oauth_settings": {
-        "auth_url": "http://localhost:4444/oauth2/auth",
-        "token_url": "http://localhost:4444/oauth2/token",
-        "admin_url": "http://localhost:4445",
+        "auth_url": "http://localhost:4444",  # Base URL without path
+        "token_url": "http://localhost:4444",  # Base URL without path
+        "admin_url": "http://localhost:4445",  # Admin URL
         "subject": "test-user@example.com",
         "session_data": {
             "access_token": {
@@ -140,6 +140,23 @@ The tool includes comprehensive error handling:
 - Network connectivity issues
 
 All errors are logged with appropriate context and stack traces in verbose mode.
+
+## URL Configuration
+
+The tool expects base URLs without paths:
+- auth_url/token_url: Base public URL (e.g., http://localhost:4444)
+  - Tool will append /oauth2/auth and /oauth2/token as needed
+- admin_url: Base admin URL (e.g., http://localhost:4445)
+  - Tool will append /admin and other paths as needed
+
+## OAuth2 Flow Sequence
+
+1. Initial authorization request
+2. Handle login challenge
+3. Make auth request with login verifier
+4. Handle consent challenge
+5. Make final auth request to get code
+6. Exchange code for tokens
 
 ## Implementation Notes
 

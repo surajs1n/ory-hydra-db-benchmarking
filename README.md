@@ -136,6 +136,20 @@ docker network rm hydra_benchmark_network
   - CPU: 1 unit
   - Memory: 2GB
 
+## Load Testing
+
+The project includes a `hydra-tester` tool for simulating OAuth2 flows and benchmarking Hydra's performance:
+
+```bash
+cd hydra-tester
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+./run.py --clients 10 --refresh-count 10 --refresh-interval 60 --verbose
+```
+
+See [hydra-tester/README.md](hydra-tester/README.md) for detailed configuration options and usage instructions.
+
 ## Notes
 - Each database is configured with appropriate resource limits (2 CPU, 4GB RAM)
 - Hydra instances are configured with 1 CPU and 2GB RAM

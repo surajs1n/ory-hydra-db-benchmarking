@@ -103,13 +103,84 @@ docker logs mysql-mysqld_exporter-1
 # Verify the MySQL exporter container name matches what Prometheus expects
 docker ps | grep mysqld_exporter
 
-# Run your experiments...
+# Run load tests with hydra-tester
+cd ../hydra-tester
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Run with default settings
+./run.py
+
+# Or with custom configuration
+./run.py \
+  --clients 10 \
+  --refresh-count 10 \
+  --refresh-interval 60 \
+  --hydra-admin-url http://localhost:4445 \
+  --hydra-public-url http://localhost:4444 \
+  --verbose
+
+# Monitor results:
+# - Check output/clients.json for client credentials
+# - Check output/tokens.json for token history
+# - Monitor metrics in Grafana dashboard
 
 # When experiment is complete, bring down MySQL stack
 docker-compose -f docker-compose.mysql.yml down
 ```
 
-### 4. Final Cleanup
+### 4. Running Load Tests
+
+The hydra-tester tool simulates complete OAuth2 flows to benchmark Hydra's performance:
+
+1. Setup:
+```bash
+cd hydra-tester
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. Configuration:
+- Default settings in config/default_config.json
+- Override via CLI flags or environment variables
+- Supports both MySQL and PostgreSQL setups
+
+3. Key Features:
+- Client creation and management
+- Authorization code flow with PKCE
+- Automated login/consent handling
+- Token refresh cycles
+- Detailed logging and metrics
+
+4. Monitoring:
+- Check output/clients.json for client data
+- Check output/tokens.json for token history
+- Monitor in Grafana:
+  - Request rates and latencies
+  - Success/failure counts
+  - Database performance impact
+
+5. Example Commands:
+```bash
+# Basic test
+./run.py
+
+# Extended test with more clients
+./run.py --clients 20 --refresh-count 15 --refresh-interval 30
+
+# Verbose mode with custom URLs
+./run.py \
+  --clients 10 \
+  --refresh-count 10 \
+  --refresh-interval 60 \
+  --hydra-admin-url http://localhost:4445 \
+  --hydra-public-url http://localhost:4444 \
+  --verbose
+```
+
+### 5. Final Cleanup
 ```bash
 # Stop monitoring stack
 cd ../shared-monitoring
