@@ -1,12 +1,13 @@
 import argparse
 import asyncio
 import os
-from typing import List
+from typing import List, Dict
 import signal
 from .utils.config import ConfigLoader
 from .utils.logger import get_logger
 from .client_manager import ClientManager
 from .oauth_flow import OAuthFlow
+from .parallel_flow import ParallelOAuthFlow
 
 class HydraTester:
     """Main class for running Hydra OAuth2 lifecycle tests"""
@@ -41,37 +42,35 @@ class HydraTester:
         return clients
 
     async def run_oauth_flows(self, clients: List[dict]) -> None:
-        """Run OAuth2 flows for all clients"""
-        self.logger.section("Running OAuth2 flows")
+        """Run OAuth2 flows for all clients with parallel threads"""
+        self.logger.section(f"Running OAuth2 flows with {self.args.threads_per_client} threads per client")
 
         for client in clients:
-            flow = OAuthFlow(
-            # Override URLs from command line if provided
-            auth_url=self.args.hydra_public_url or self.config.oauth_settings.auth_url,
-            token_url=self.args.hydra_public_url or self.config.oauth_settings.token_url,
-            admin_url=self.args.hydra_admin_url or self.config.oauth_settings.admin_url,
-                client_id=client['client_id'],
-                client_secret=client['client_secret'],
-                redirect_uri=self.args.redirect_uri,
-                scope=self.args.scope,
-                subject=self.config.oauth_settings.subject,
-                session_data=self.config.oauth_settings.session_data.model_dump()
-            )
-            self.flows.append(flow)
-
+            # Create config for this client
+            client_config = {
+                'auth_url': self.args.hydra_public_url or self.config.oauth_settings.auth_url,
+                'token_url': self.args.hydra_public_url or self.config.oauth_settings.token_url,
+                'admin_url': self.args.hydra_admin_url or self.config.oauth_settings.admin_url,
+                'client_id': client['client_id'],
+                'client_secret': client['client_secret'],
+                'redirect_uri': self.args.redirect_uri,
+                'scope': self.args.scope,
+                'subject': self.config.oauth_settings.subject,
+                'session_data': self.config.oauth_settings.session_data.model_dump(),
+                'refresh_count': self.args.refresh_count,
+                'refresh_interval': self.args.refresh_interval
+            }
+            
             try:
-                tokens = await flow.run_auth_flow()
-                if self.args.refresh_count > 0:
-                    await flow.run_refresh_cycle(
-                        tokens['refresh_token'],
-                        self.args.refresh_count,
-                        self.args.refresh_interval
-                    )
+                # Create and run parallel flows for this client
+                parallel_flow = ParallelOAuthFlow(
+                    client_config,
+                    self.args.threads_per_client
+                )
+                parallel_flow.run()
             except Exception as e:
-                self.logger.error(f"Flow failed for client {client['client_id']}: {e}")
+                self.logger.error(f"Parallel flow failed for client {client['client_id']}: {e}")
                 continue
-
-            flow.save_token_history()
 
     async def cleanup(self) -> None:
         """Clean up resources"""
@@ -156,8 +155,22 @@ def parse_args():
         action="store_true",
         help="Clean up clients after test"
     )
+    parser.add_argument(
+        "--threads-per-client",
+        type=int,
+        default=1,
+        help="Number of parallel threads per client (max 100)"
+    )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Validate limits
+    if args.clients > 100:
+        raise ValueError("Maximum number of clients is 100")
+    if args.threads_per_client > 100:
+        raise ValueError("Maximum threads per client is 100")
+        
+    return args
 
 def main():
     """Main entry point"""

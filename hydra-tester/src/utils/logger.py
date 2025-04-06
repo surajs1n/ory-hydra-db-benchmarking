@@ -1,11 +1,13 @@
 import logging
 import sys
+import threading
 from rich.console import Console
 from rich.logging import RichHandler
 from typing import Optional, Any
+from queue import Queue
 
-class Logger:
-    """Custom logger with rich formatting and file output support"""
+class ThreadSafeLogger:
+    """Thread-safe logger with rich formatting and file output support"""
     
     def __init__(
         self,
@@ -14,6 +16,8 @@ class Logger:
         log_file: Optional[str] = None,
         verbose: bool = False
     ):
+        self._queue = Queue()
+        self._thread = threading.Thread(target=self._logger_thread, daemon=True)
         # Set up rich console
         self.console = Console()
         
@@ -23,6 +27,9 @@ class Logger:
         
         # Clear any existing handlers
         self.logger.handlers = []
+        
+        # Start logger thread
+        self._thread.start()
         
         # Create console handler with rich formatting
         console_handler = RichHandler(
@@ -45,6 +52,24 @@ class Logger:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
 
+    def _logger_thread(self):
+        """Background thread for processing log messages"""
+        while True:
+            record = self._queue.get()
+            if record is None:
+                break
+            # Process the log record
+            self.logger.handle(record)
+            
+    def _enqueue(self, level: int, msg: str, *args, **kwargs):
+        """Add log record to queue"""
+        thread_id = threading.get_ident()
+        msg = f"[Thread-{thread_id}] {msg}"
+        record = logging.LogRecord(
+            "hydra-tester", level, "", 0, msg, args, None
+        )
+        self._queue.put(record)
+
     def debug(self, msg: str, data: Any = None, *args, **kwargs):
         """Log debug message with optional data"""
         if data is not None:
@@ -53,57 +78,66 @@ class Logger:
                 self.console.print_json(data=data)
             else:
                 self.console.print(f"\n[dim]Debug data:[/dim] {data}")
-        self.logger.debug(msg, *args, **kwargs)
+        self._enqueue(logging.DEBUG, msg, *args, **kwargs)
 
     def info(self, msg: str, *args, **kwargs):
         """Log info message"""
-        self.logger.info(msg, *args, **kwargs)
+        self._enqueue(logging.INFO, msg, *args, **kwargs)
 
     def warning(self, msg: str, *args, **kwargs):
         """Log warning message"""
-        self.logger.warning(msg, *args, **kwargs)
+        self._enqueue(logging.WARNING, msg, *args, **kwargs)
 
     def error(self, msg: str, *args, **kwargs):
         """Log error message"""
-        self.logger.error(msg, *args, **kwargs)
+        self._enqueue(logging.ERROR, msg, *args, **kwargs)
 
     def critical(self, msg: str, *args, **kwargs):
         """Log critical message"""
-        self.logger.critical(msg, *args, **kwargs)
+        self._enqueue(logging.CRITICAL, msg, *args, **kwargs)
 
     def exception(self, msg: str, *args, **kwargs):
         """Log exception with traceback"""
-        self.logger.exception(msg, *args, **kwargs)
+        self._enqueue(logging.ERROR, msg, *args, exc_info=True, **kwargs)
 
     def section(self, title: str):
         """Log a section header"""
-        self.console.print(f"\n[bold blue]{'='*20} {title} {'='*20}[/bold blue]\n")
+        self._enqueue(logging.INFO, f"\n{'='*20} {title} {'='*20}\n")
 
     def success(self, msg: str):
         """Log a success message"""
-        self.console.print(f"[bold green]✓ {msg}[/bold green]")
+        self._enqueue(logging.INFO, f"✓ {msg}")
 
     def failure(self, msg: str):
         """Log a failure message"""
-        self.console.print(f"[bold red]✗ {msg}[/bold red]")
+        self._enqueue(logging.ERROR, f"✗ {msg}")
 
     def json(self, data: Any, title: Optional[str] = None):
         """Log data with optional title"""
+        msg = ""
         if title:
-            self.console.print(f"\n[bold cyan]{title}:[/bold cyan]")
+            msg += f"\n{title}:\n"
         if isinstance(data, (dict, list)):
-            self.console.print_json(data=data)
+            import json
+            msg += json.dumps(data, indent=2)
         else:
-            self.console.print(str(data))
+            msg += str(data)
+        self._enqueue(logging.INFO, msg)
+
+    def __del__(self):
+        """Cleanup on deletion"""
+        self._queue.put(None)
+        if self._thread.is_alive():
+            self._thread.join()
 
 # Create default logger instance
-logger = Logger()
+logger = ThreadSafeLogger()
 
 def get_logger(
     name: str = "hydra-tester",
     level: str = "INFO",
     log_file: Optional[str] = None,
     verbose: bool = False
-) -> Logger:
+) -> ThreadSafeLogger:
     """Get a configured logger instance"""
-    return Logger(name=name, level=level, log_file=log_file, verbose=verbose)
+    return ThreadSafeLogger(name=name, level=level, log_file=log_file, verbose=verbose)
