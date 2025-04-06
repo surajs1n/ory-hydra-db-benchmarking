@@ -1,0 +1,25 @@
+{
+    "client_config": {
+        "redirect_uris": ["http://localhost/callback"],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code", "id_token"],
+        "token_endpoint_auth_method": "client_secret_post",
+        "scope": "openid offline_access user user.profile user.email",
+        "skip_consent": true
+    },
+    "oauth_settings": {
+        "auth_url": "http://localhost:4444",
+        "token_url": "http://localhost:4444",
+        "admin_url": "http://localhost:4445",
+        "subject": "test-user@example.com",
+        "session_data": {
+            "access_token": {
+                "user_id": "default-user-id"
+            },
+            "id_token": {
+                "name": "Test User",
+                "email": "test-user@example.com"
+            }
+        }
+    }
+}
