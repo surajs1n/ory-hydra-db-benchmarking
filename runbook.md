@@ -97,6 +97,12 @@ docker-compose -f docker-compose.mysql.yml logs -f
 # Verify metrics are being collected
 curl -s http://localhost:9104/metrics | grep "mysql_up"
 
+# If the MySQL exporter is not working, check the container logs
+docker logs mysql-mysqld_exporter-1
+
+# Verify the MySQL exporter container name matches what Prometheus expects
+docker ps | grep mysqld_exporter
+
 # Run your experiments...
 
 # When experiment is complete, bring down MySQL stack
@@ -224,7 +230,7 @@ Note: Hydra metrics are now collected via the `/admin/metrics/prometheus` endpoi
    - Prometheus query: `rate(pg_stat_database_xact_commit[5m])`
 
 ### MySQL Metrics
-- Container name: `mysql-mysqld_exporter-1:9104`
+- Container name: `mysql-mysqld_exporter-1:9104` (configured in docker-compose.mysql.yml)
 1. **InnoDB Purge Threads**
    - Prometheus query: `mysql_global_status_innodb_purge_threads`
 
@@ -247,6 +253,39 @@ Note: Hydra metrics are now collected via the `/admin/metrics/prometheus` endpoi
    - Prometheus query: `sum(rate(http_request_duration_seconds_count{job=~"hydra-.*",code=~"5.*"}[5m]))`
 
 ## Troubleshooting
+
+### MySQL Exporter Issues
+
+1. **MySQL exporter container naming**
+   - Ensure the container name in docker-compose.mysql.yml matches what Prometheus expects:
+     ```yaml
+     mysql_exporter:
+       build:
+         context: .
+         dockerfile: Dockerfile.exporter
+       container_name: mysql-mysqld_exporter-1
+     ```
+
+2. **MySQL exporter connection issues**
+   - Check the Dockerfile.exporter configuration:
+     ```
+     FROM prom/mysqld-exporter:v0.15.0
+     
+     USER root
+     RUN echo -e "[client]\nuser=root\npassword=secret\nhost=mysql\nport=3306" > /etc/.my.cnf && \
+         chmod 644 /etc/.my.cnf
+     USER nobody
+     
+     ENTRYPOINT [ "/bin/mysqld_exporter" ]
+     CMD [ "--config.my-cnf=/etc/.my.cnf", "--collect.info_schema.tables", "--collect.info_schema.innodb_metrics", 
+           "--collect.global_status", "--collect.global_variables", "--collect.perf_schema.tableiowaits", 
+           "--collect.perf_schema.indexiowaits", "--collect.perf_schema.tablelocks" ]
+     ```
+
+3. **Verifying MySQL exporter metrics**
+   - Check if the exporter is running: `docker ps | grep mysqld_exporter`
+   - Check if metrics are available: `curl -s http://localhost:9104/metrics | grep mysql_up`
+   - Check Prometheus targets: `curl -s http://localhost:9090/api/v1/targets | grep mysql`
 
 ### Common Issues
 
