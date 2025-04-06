@@ -145,7 +145,7 @@ cd hydra-tester
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-# Example with 10 clients, 5 threads per client
+# Example with 10 clients, 5 concurrent threads per client (50 total concurrent flows)
 ./run.py --clients 10 --threads-per-client 5 --refresh-count 10 --refresh-interval 60 --verbose
 ```
 

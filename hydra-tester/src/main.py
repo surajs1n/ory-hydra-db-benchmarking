@@ -1,19 +1,22 @@
 import argparse
 import asyncio
 import os
+import asyncio
+import threading
 from typing import List, Dict
 import signal
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .utils.config import ConfigLoader
-from .utils.logger import get_logger
+from .utils.logger import get_logger # Import the function
 from .client_manager import ClientManager
 from .oauth_flow import OAuthFlow
-from .parallel_flow import ParallelOAuthFlow
 
 class HydraTester:
     """Main class for running Hydra OAuth2 lifecycle tests"""
 
     def __init__(self, args):
         self.args = args
+        # Initialize logger correctly based on args
         self.logger = get_logger(
             level="DEBUG" if args.verbose else "INFO",
             log_file=args.log_file,
@@ -22,9 +25,9 @@ class HydraTester:
         self.config = ConfigLoader(args.config).get_config()
         self.client_manager = ClientManager(
             self.config.oauth_settings.admin_url,
-            self.config.client_config
+            self.config.client_config,
+            self.logger # Pass logger instance
         )
-        self.flows: List[OAuthFlow] = []
 
     async def setup_clients(self) -> None:
         """Set up OAuth2 clients"""
@@ -41,12 +44,52 @@ class HydraTester:
         self.client_manager.save_clients()
         return clients
 
-    async def run_oauth_flows(self, clients: List[dict]) -> None:
-        """Run OAuth2 flows for all clients with parallel threads"""
-        self.logger.section(f"Running OAuth2 flows with {self.args.threads_per_client} threads per client")
+    def _execute_single_flow(self, client_config: Dict, thread_id: int):
+        """Executes a single OAuth flow in its own event loop."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            flow = OAuthFlow(
+                auth_url=client_config['auth_url'],
+                token_url=client_config['token_url'],
+                admin_url=client_config['admin_url'],
+                client_id=client_config['client_id'],
+                client_secret=client_config['client_secret'],
+                redirect_uri=client_config['redirect_uri'],
+                scope=client_config['scope'],
+                subject=client_config['subject'],
+                session_data=client_config['session_data'],
+                thread_id=thread_id,
+                logger=self.logger # Pass logger instance
+            )
+            
+            # Run the auth flow
+            tokens = loop.run_until_complete(flow.run_auth_flow())
+            
+            # Run refresh cycle if needed
+            if client_config['refresh_count'] > 0 and tokens:
+                loop.run_until_complete(flow.run_refresh_cycle(
+                    tokens.get('refresh_token'), # Use .get for safety
+                    client_config['refresh_count'],
+                    client_config['refresh_interval']
+                ))
+            
+            # Save history (already thread-safe per file)
+            flow.save_token_history()
+            self.logger.info(f"[Client {client_config['client_id']} Thread {thread_id}] Flow completed successfully.") # Use self.logger
+            
+        except Exception as e:
+            self.logger.error(f"[Client {client_config['client_id']} Thread {thread_id}] Flow execution failed: {e}", exc_info=self.args.verbose) # Use self.logger
+        finally:
+            loop.close()
 
+    def run_all_flows_concurrently(self, clients: List[dict]) -> None:
+        """Run all OAuth flows concurrently across all clients and threads."""
+        total_threads_required = len(clients) * self.args.threads_per_client
+        self.logger.section(f"Starting {total_threads_required} total concurrent flows ({len(clients)} clients x {self.args.threads_per_client} threads/client)") # Use self.logger
+
+        tasks = []
         for client in clients:
-            # Create config for this client
             client_config = {
                 'auth_url': self.args.hydra_public_url or self.config.oauth_settings.auth_url,
                 'token_url': self.args.hydra_public_url or self.config.oauth_settings.token_url,
@@ -60,42 +103,65 @@ class HydraTester:
                 'refresh_count': self.args.refresh_count,
                 'refresh_interval': self.args.refresh_interval
             }
-            
-            try:
-                # Create and run parallel flows for this client
-                parallel_flow = ParallelOAuthFlow(
-                    client_config,
-                    self.args.threads_per_client
-                )
-                parallel_flow.run()
-            except Exception as e:
-                self.logger.error(f"Parallel flow failed for client {client['client_id']}: {e}")
-                continue
+            for thread_id in range(self.args.threads_per_client):
+                tasks.append((client_config, thread_id))
 
-    async def cleanup(self) -> None:
+        # Use ThreadPoolExecutor for true parallelism
+        # The max_workers will naturally limit concurrency based on total_threads_required
+        with ThreadPoolExecutor(max_workers=total_threads_required) as executor:
+            futures = {executor.submit(self._execute_single_flow, cfg, tid): (cfg['client_id'], tid) for cfg, tid in tasks}
+            
+            completed_count = 0
+            for future in as_completed(futures):
+                client_id, thread_id = futures[future]
+                completed_count += 1
+                try:
+                    future.result()  # Raise exceptions if any occurred in the thread
+                    self.logger.debug(f"Future completed for Client {client_id} Thread {thread_id}. ({completed_count}/{total_threads_required})") # Use self.logger
+                except Exception as exc:
+                    self.logger.error(f"Task for Client {client_id} Thread {thread_id} generated an exception: {exc}") # Use self.logger
+        
+        self.logger.info(f"All {total_threads_required} flows have completed.") # Use self.logger
+
+    # Note: cleanup needs to be synchronous if called after thread pool
+    def cleanup(self) -> None:
         """Clean up resources"""
         if self.args.cleanup:
-            self.logger.section("Cleaning up")
-            await self.client_manager.cleanup_clients()
+            self.logger.section("Cleaning up clients") # Use self.logger
+            # ClientManager cleanup might need adjustment if it uses async internally
+            # For now, assume it can be called synchronously or adapt it.
+            # If client_manager uses async internally, we might need to run its cleanup
+            # in a separate event loop.
+            try:
+                # Assuming cleanup can run synchronously for now
+                # If create_clients was async, load_clients might be sufficient if state is saved
+                # Or we need an async version of cleanup
+                asyncio.run(self.client_manager.cleanup_clients()) 
+                self.logger.info("Client cleanup completed.") # Use self.logger
+            except Exception as e:
+                 self.logger.error(f"Client cleanup failed: {e}") # Use self.logger
 
-    async def run(self) -> None:
+
+    def run(self) -> None:
         """Run the complete test cycle"""
         try:
-            # Set up clients
-            clients = await self.setup_clients()
+            # Set up clients (needs to run async before thread pool)
+            clients = asyncio.run(self.setup_clients())
             if not clients:
-                self.logger.error("No clients available")
+                self.logger.error("No clients available, exiting.") # Use self.logger
                 return
 
-            # Run OAuth flows
-            await self.run_oauth_flows(clients)
+            # Run OAuth flows concurrently using the thread pool
+            self.run_all_flows_concurrently(clients)
 
         except KeyboardInterrupt:
-            self.logger.warning("Interrupted by user")
+            self.logger.warning("Interrupted by user. Attempting cleanup...") # Use self.logger
+            # Consider how to gracefully shut down the thread pool here if needed
         except Exception as e:
-            self.logger.error(f"Test failed: {e}")
+            self.logger.error(f"Test run failed: {e}", exc_info=self.args.verbose) # Use self.logger
         finally:
-            await self.cleanup()
+            # Run cleanup synchronously after thread pool finishes
+            self.cleanup()
 
 def parse_args():
     """Parse command line arguments"""
@@ -176,17 +242,41 @@ def main():
     """Main entry point"""
     args = parse_args()
     
-    # Set up signal handlers
-    loop = asyncio.get_event_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: loop.stop())
-
-    # Create and run tester
+    # Signal handling might need adjustment for thread pools
+    # Basic signal handling for main thread:
     tester = HydraTester(args)
+    
+    # Need access to the logger instance created in HydraTester
+    # We'll configure it after creating the tester instance
+    
+    main_thread_interrupt = threading.Event()
+    
+    # Define signal_handler function that can access the tester's logger
+    def create_signal_handler(tester_instance):
+        def signal_handler(sig, frame):
+            print("\nSignal received, initiating shutdown...")
+            tester_instance.logger.warning("Signal received, initiating shutdown...") # Use tester's logger
+            main_thread_interrupt.set()
+            # Potentially add logic here to signal worker threads if possible/needed
+            # For ThreadPoolExecutor, ongoing tasks will complete unless forced.
+        return signal_handler
+
+    signal_handler_func = create_signal_handler(tester)
+    signal.signal(signal.SIGINT, signal_handler_func)
+    signal.signal(signal.SIGTERM, signal_handler_func)
+    # Removed duplicated signal registration below
+
     try:
-        loop.run_until_complete(tester.run())
-    finally:
-        loop.close()
+        tester.run() # Run is now synchronous from the main thread's perspective
+        if main_thread_interrupt.is_set():
+             tester.logger.warning("Shutdown initiated by signal.") # Use tester's logger
+        else:
+             tester.logger.info("Test run completed normally.") # Use tester's logger
+             
+    except Exception as e:
+         # Use the tester's logger if available, otherwise print
+         log_func = tester.logger.critical if hasattr(tester, 'logger') else print
+         log_func(f"Unhandled exception in main execution: {e}", exc_info=True)
 
 if __name__ == "__main__":
     main()

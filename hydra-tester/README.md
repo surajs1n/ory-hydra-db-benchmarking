@@ -6,7 +6,7 @@ A CLI tool for testing ORY Hydra's OAuth2 Authorization Code + Refresh Token flo
 
 - Manages multiple OAuth2 clients (up to 100)
 - Simulates complete OAuth2 flow with PKCE
-- **Supports parallel execution with multiple threads per client (up to 100)**
+- **Supports true concurrent execution across all clients and threads** (up to 100 clients * 100 threads/client)
 - Handles login/consent automatically
 - Supports token refresh cycles
 - Detailed, thread-safe logging and output
@@ -32,8 +32,9 @@ Basic usage with default settings:
 ./run.py
 ```
 
-Custom configuration with parallel execution:
+Custom configuration with concurrent execution:
 ```bash
+# Run 5 threads for each of the 10 clients concurrently (50 total threads)
 ./run.py \
   --clients 10 \
   --threads-per-client 5 \
@@ -168,8 +169,8 @@ The tool expects base URLs without paths:
 - Sets proper Content-Type headers for token requests (`application/x-www-form-urlencoded`)
 - Handles login and consent challenges automatically
 - Supports token refresh cycles with configurable intervals
-- **Parallel Execution:** Uses a thread pool to run multiple OAuth flows concurrently for each client.
-- **Thread Safety:** Employs thread-local storage and a thread-safe logging queue to ensure safe parallel operation.
+- **Concurrent Execution:** Uses a global thread pool to run all requested OAuth flows (across all clients and their threads) concurrently.
+- **Thread Safety:** Employs thread-local storage for token history and a thread-safe logging queue to ensure safe concurrent operation. Each thread writes to its own output file.
 
 ## Contributing
 

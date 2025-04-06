@@ -1,15 +1,19 @@
 import aiohttp
 from typing import Dict, Any, Optional, Tuple, List
 from urllib.parse import urlparse, parse_qs
-from .utils.logger import logger
+# from .utils.logger import logger # Removed global logger import
 
 class ConsentHandler:
     """Handles Hydra login and consent flows"""
 
+    # Assuming ConsentHandler doesn't need its own logger instance for now,
+    # as errors are typically logged by the calling function (OAuthFlow).
+    # If needed, we can add a logger parameter here too.
     def __init__(self, admin_url: str, subject: str, session_data: Dict[str, Any]):
         self.admin_url = f"{admin_url.rstrip('/')}/admin"  # Add /admin to base URL
         self.subject = subject
         self.session_data = session_data
+        # If logging is needed within this class, add: self.logger = logger_instance
 
     @staticmethod
     def extract_challenge(url: str, challenge_type: str) -> Optional[str]:
@@ -20,7 +24,8 @@ class ConsentHandler:
             challenge = params.get(f"{challenge_type}_challenge", [None])[0]
             return challenge
         except Exception as e:
-            logger.error(f"Failed to extract {challenge_type} challenge: {e}")
+            # Log errors from the calling context (OAuthFlow) which has the logger
+            print(f"Error extracting {challenge_type} challenge: {e}") # Basic print for now
             return None
 
     async def handle_login_challenge(self, challenge: str) -> Dict[str, Any]:
@@ -68,8 +73,7 @@ class ConsentHandler:
                 params={"login_challenge": challenge}
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to get login request: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
 
@@ -93,8 +97,7 @@ class ConsentHandler:
                 json=data
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to accept login: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
 
@@ -106,8 +109,7 @@ class ConsentHandler:
                 params={"consent_challenge": challenge}
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to get consent request: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
 
@@ -131,7 +133,6 @@ class ConsentHandler:
                 json=data
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to accept consent: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
