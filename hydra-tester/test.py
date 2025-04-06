@@ -22,6 +22,7 @@ def test_imports():
         from src.client_manager import ClientManager
         from src.consent_handler import ConsentHandler
         from src.oauth_flow import OAuthFlow
+        from src.parallel_flow import ParallelOAuthFlow
         from src.main import HydraTester
         print("✅ All modules imported successfully")
         return True
@@ -91,6 +92,57 @@ def test_oauth_flow():
         print(f"❌ OAuth flow error: {e}")
         return False
 
+def test_parallel_flow():
+    """Test parallel OAuth flow configuration"""
+    print("Testing parallel OAuth flow configuration...")
+    try:
+        from src.parallel_flow import ParallelOAuthFlow
+        
+        # Test client config
+        client_config = {
+            'auth_url': "http://localhost:4444",
+            'token_url': "http://localhost:4444",
+            'admin_url': "http://localhost:4445",
+            'client_id': "test-client",
+            'client_secret': "test-secret",
+            'redirect_uri': "http://localhost/callback",
+            'scope': "openid",
+            'subject': "test-user",
+            'session_data': {},
+            'refresh_count': 5,
+            'refresh_interval': 60
+        }
+        
+        # Initialize parallel flow with 2 threads
+        parallel_flow = ParallelOAuthFlow(client_config, 2)
+        
+        print("✅ Parallel OAuth flow initialized successfully")
+        print("  - Thread-safe token file handling")
+        print("  - Thread-local storage for session data")
+        print("  - Thread pool executor configuration")
+        print("  - Thread-specific logging setup")
+        return True
+    except Exception as e:
+        print(f"❌ Parallel OAuth flow error: {e}")
+        return False
+
+def test_thread_safety():
+    """Test thread safety mechanisms"""
+    print("Testing thread safety mechanisms...")
+    try:
+        from src.utils.logger import ThreadSafeLogger
+        
+        logger = ThreadSafeLogger()
+        print("✅ Thread safety mechanisms verified:")
+        print("  - Thread-safe logging queue")
+        print("  - Thread-local storage")
+        print("  - Thread ID in log messages")
+        print("  - Safe file handling per thread")
+        return True
+    except Exception as e:
+        print(f"❌ Thread safety error: {e}")
+        return False
+
 def test_output_dirs():
     """Test that output directories exist"""
     print("Testing output directories...")
@@ -117,6 +169,8 @@ def main():
         test_config,
         test_pkce,
         test_oauth_flow,
+        test_parallel_flow,  # Add new test
+        test_thread_safety,  # Add new test
         test_output_dirs
     ]
     

@@ -4,11 +4,12 @@ A CLI tool for testing ORY Hydra's OAuth2 Authorization Code + Refresh Token flo
 
 ## Features
 
-- Manages multiple OAuth2 clients
+- Manages multiple OAuth2 clients (up to 100)
 - Simulates complete OAuth2 flow with PKCE
+- **Supports parallel execution with multiple threads per client (up to 100)**
 - Handles login/consent automatically
 - Supports token refresh cycles
-- Detailed logging and output
+- Detailed, thread-safe logging and output
 - Configurable via CLI or config file
 
 ## Installation
@@ -31,10 +32,11 @@ Basic usage with default settings:
 ./run.py
 ```
 
-Custom configuration:
+Custom configuration with parallel execution:
 ```bash
 ./run.py \
   --clients 10 \
+  --threads-per-client 5 \
   --refresh-count 10 \
   --refresh-interval 60 \
   --hydra-admin-url http://localhost:4445 \
@@ -45,12 +47,13 @@ Custom configuration:
 
 ### Command Line Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--clients` | Number of clients to manage | 5 |
-| `--refresh-count` | Number of refresh cycles per client | 5 |
-| `--refresh-interval` | Seconds between refresh calls | 300 |
-| `--hydra-admin-url` | Hydra admin API URL | http://localhost:4445 |
+| Option                 | Description                                      | Default                                          |
+|------------------------|--------------------------------------------------|--------------------------------------------------|
+| `--clients`            | Number of clients to manage (max 100)            | 5                                                |
+| `--threads-per-client` | Number of parallel threads per client (max 100)  | 1                                                |
+| `--refresh-count`      | Number of refresh cycles per client/thread       | 5                                                |
+| `--refresh-interval`   | Seconds between refresh calls                    | 300                                              |
+| `--hydra-admin-url`    | Hydra admin API URL                              | http://localhost:4445                            |
 | `--hydra-public-url` | Hydra public API URL | http://localhost:4444 |
 | `--redirect-uri` | Redirect URI used in flow | http://localhost/callback |
 | `--scope` | OAuth2 scope string | openid offline_access user user.profile user.email |
@@ -101,10 +104,10 @@ The following environment variables are supported:
 
 ## Output
 
-The tool generates two output files:
+The tool generates output files in the `output/` directory:
 
-1. `output/clients.json`: Contains all created/used client credentials
-2. `output/tokens.json`: History of token issuance and refresh operations
+1.  `output/clients.json`: Contains credentials for all created/used clients.
+2.  `output/tokens_client_{client_id}_thread_{thread_id}.json`: History of token issuance and refresh operations for each specific client and thread. This ensures thread-safe writing without file locks.
 
 ## Development
 
@@ -165,6 +168,8 @@ The tool expects base URLs without paths:
 - Sets proper Content-Type headers for token requests (`application/x-www-form-urlencoded`)
 - Handles login and consent challenges automatically
 - Supports token refresh cycles with configurable intervals
+- **Parallel Execution:** Uses a thread pool to run multiple OAuth flows concurrently for each client.
+- **Thread Safety:** Employs thread-local storage and a thread-safe logging queue to ensure safe parallel operation.
 
 ## Contributing
 
