@@ -12,7 +12,9 @@ This project sets up ORY Hydra with both MySQL and PostgreSQL databases for perf
 │   └── pg_hba.conf
 ├── mysql/
 │   ├── docker-compose.mysql.yml
-│   └── my.cnf
+│   ├── my.cnf
+│   ├── .my.cnf
+│   └── Dockerfile.exporter
 └── shared-monitoring/
     ├── docker-compose.monitoring.yml
     ├── prometheus/
@@ -45,7 +47,11 @@ This unified network approach simplifies service discovery and ensures metrics c
 - InnoDB optimizations
 - Buffer pool and log settings
 - Performance schema enabled
-- Monitoring via mysqld_exporter
+- Custom mysqld_exporter configuration:
+  - Built from prom/mysqld-exporter:v0.15.0
+  - Configured with root access for complete metrics collection
+  - Enhanced metrics collection (tables, innodb, global status)
+  - Proper container naming for Prometheus service discovery
 
 ## Running the Experiments
 
