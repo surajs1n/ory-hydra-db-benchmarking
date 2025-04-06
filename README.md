@@ -142,10 +142,11 @@ The project includes a `hydra-tester` tool for simulating OAuth2 flows and bench
 
 ```bash
 cd hydra-tester
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-./run.py --clients 10 --refresh-count 10 --refresh-interval 60 --verbose
+# Example with 10 clients, 5 threads per client
+./run.py --clients 10 --threads-per-client 5 --refresh-count 10 --refresh-interval 60 --verbose
 ```
 
 See [hydra-tester/README.md](hydra-tester/README.md) for detailed configuration options and usage instructions.
