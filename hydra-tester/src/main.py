@@ -23,10 +23,12 @@ class HydraTester:
             verbose=args.verbose
         )
         self.config = ConfigLoader(args.config).get_config()
+        # Pass timeout to ClientManager
         self.client_manager = ClientManager(
             self.config.oauth_settings.admin_url,
             self.config.client_config,
-            self.logger # Pass logger instance
+            self.logger, # Pass logger instance
+            self.args.timeout # Pass timeout
         )
 
     async def setup_clients(self) -> None:
@@ -49,6 +51,7 @@ class HydraTester:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
+            # Pass timeout from client_config to OAuthFlow
             flow = OAuthFlow(
                 auth_url=client_config['auth_url'],
                 token_url=client_config['token_url'],
@@ -60,7 +63,8 @@ class HydraTester:
                 subject=client_config['subject'],
                 session_data=client_config['session_data'],
                 thread_id=thread_id,
-                logger=self.logger # Pass logger instance
+                logger=self.logger, # Pass logger instance
+                timeout=client_config['timeout'] # Pass timeout
             )
             
             # Run the auth flow
@@ -79,17 +83,22 @@ class HydraTester:
             self.logger.info(f"[Client {client_config['client_id']} Thread {thread_id}] Flow completed successfully.") # Use self.logger
             
         except Exception as e:
-            self.logger.error(f"[Client {client_config['client_id']} Thread {thread_id}] Flow execution failed: {e}", exc_info=self.args.verbose) # Use self.logger
+            # Log timeout errors specifically if possible
+            if isinstance(e, asyncio.TimeoutError):
+                 self.logger.error(f"[Client {client_config['client_id']} Thread {thread_id}] Flow execution TIMED OUT after {client_config['timeout']} seconds.")
+            else:
+                 self.logger.error(f"[Client {client_config['client_id']} Thread {thread_id}] Flow execution failed: {e}", exc_info=self.args.verbose) # Use self.logger
         finally:
             loop.close()
 
     def run_all_flows_concurrently(self, clients: List[dict]) -> None:
         """Run all OAuth flows concurrently across all clients and threads."""
         total_threads_required = len(clients) * self.args.threads_per_client
-        self.logger.section(f"Starting {total_threads_required} total concurrent flows ({len(clients)} clients x {self.args.threads_per_client} threads/client)") # Use self.logger
+        self.logger.section(f"Starting {total_threads_required} total concurrent flows ({len(clients)} clients x {self.args.threads_per_client} threads/client) with timeout {self.args.timeout}s") # Use self.logger
 
         tasks = []
         for client in clients:
+            # Add timeout to the config passed to each thread
             client_config = {
                 'auth_url': self.args.hydra_public_url or self.config.oauth_settings.auth_url,
                 'token_url': self.args.hydra_public_url or self.config.oauth_settings.token_url,
@@ -101,7 +110,8 @@ class HydraTester:
                 'subject': self.config.oauth_settings.subject,
                 'session_data': self.config.oauth_settings.session_data.model_dump(),
                 'refresh_count': self.args.refresh_count,
-                'refresh_interval': self.args.refresh_interval
+                'refresh_interval': self.args.refresh_interval,
+                'timeout': self.args.timeout # Add timeout to config
             }
             for thread_id in range(self.args.threads_per_client):
                 tasks.append((client_config, thread_id))
@@ -119,7 +129,8 @@ class HydraTester:
                     future.result()  # Raise exceptions if any occurred in the thread
                     self.logger.debug(f"Future completed for Client {client_id} Thread {thread_id}. ({completed_count}/{total_threads_required})") # Use self.logger
                 except Exception as exc:
-                    self.logger.error(f"Task for Client {client_id} Thread {thread_id} generated an exception: {exc}") # Use self.logger
+                    # Error is already logged within _execute_single_flow
+                    self.logger.debug(f"Task for Client {client_id} Thread {thread_id} completed with an exception.") # Use self.logger
         
         self.logger.info(f"All {total_threads_required} flows have completed.") # Use self.logger
 
@@ -145,6 +156,16 @@ class HydraTester:
     def run(self) -> None:
         """Run the complete test cycle"""
         try:
+            # --- Clear local client cache before setup ---
+            client_cache_file = "output/clients.json"
+            if os.path.exists(client_cache_file):
+                try:
+                    os.remove(client_cache_file)
+                    self.logger.info(f"Cleared local client cache file: {client_cache_file}")
+                except OSError as e:
+                    self.logger.error(f"Error removing client cache file {client_cache_file}: {e}")
+            # ---------------------------------------------
+
             # Set up clients (needs to run async before thread pool)
             clients = asyncio.run(self.setup_clients())
             if not clients:
@@ -182,7 +203,7 @@ def parse_args():
     parser.add_argument(
         "--refresh-interval",
         type=int,
-        default=300,
+        default=5, # Changed default from 300 to 5
         help="Seconds between refresh calls"
     )
     parser.add_argument(
@@ -226,6 +247,12 @@ def parse_args():
         type=int,
         default=1,
         help="Number of parallel threads per client (max 100)"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=10,
+        help="HTTP request timeout in seconds"
     )
 
     args = parser.parse_args()

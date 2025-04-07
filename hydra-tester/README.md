@@ -53,7 +53,8 @@ Custom configuration with concurrent execution:
 | `--clients`            | Number of clients to manage (max 100)            | 5                                                |
 | `--threads-per-client` | Number of parallel threads per client (max 100)  | 1                                                |
 | `--refresh-count`      | Number of refresh cycles per client/thread       | 5                                                |
-| `--refresh-interval`   | Seconds between refresh calls                    | 300                                              |
+| `--refresh-interval`   | Seconds between refresh calls                    | 5                                                |
+| `--timeout`            | HTTP request timeout in seconds                  | 10                                               |
 | `--hydra-admin-url`    | Hydra admin API URL                              | http://localhost:4445                            |
 | `--hydra-public-url` | Hydra public API URL | http://localhost:4444 |
 | `--redirect-uri` | Redirect URI used in flow | http://localhost/callback |

@@ -23,8 +23,9 @@ class OAuthFlow:
         scope: str,
         subject: str,
         session_data: Dict,
-        thread_id: Optional[int] = None,  # New parameter
-        logger = None # Added logger parameter
+        thread_id: Optional[int] = None,
+        logger = None, # Added logger parameter
+        timeout: int = 10 # Added timeout parameter
     ):
         self.auth_url = auth_url.rstrip('/')
         self.token_url = token_url.rstrip('/')
@@ -34,9 +35,10 @@ class OAuthFlow:
         self.redirect_uri = redirect_uri
         self.scope = scope
         self.pkce = PKCEGenerator()
-        # Pass logger to ConsentHandler if it needed one (currently doesn't)
-        self.consent_handler = ConsentHandler(admin_url, subject, session_data) 
         self.logger = logger # Store logger instance
+        self.timeout = aiohttp.ClientTimeout(total=timeout) # Create timeout object
+        # Pass timeout to ConsentHandler
+        self.consent_handler = ConsentHandler(admin_url, subject, session_data, timeout=timeout) 
         
         # Thread-specific token file
         if thread_id is not None:
@@ -63,7 +65,7 @@ class OAuthFlow:
             url = f"{self.auth_url}/oauth2/auth?{urlencode(params)}"
             self.logger.debug(f"[Client {self.client_id} Thread {self.thread_id}] Making initial auth request to: {url}") # Use self.logger
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.get(url, allow_redirects=False, cookies=cookies) as response:
                 if response.status not in [302, 303]:
                     error_text = await response.text()
@@ -87,7 +89,7 @@ class OAuthFlow:
             **self.pkce.token_params
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.post(
                 f"{self.token_url}/oauth2/token",
                 data=data,
@@ -107,7 +109,7 @@ class OAuthFlow:
             "refresh_token": refresh_token
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.post(
                 f"{self.token_url}/oauth2/token",
                 data=data,

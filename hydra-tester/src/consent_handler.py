@@ -8,12 +8,11 @@ class ConsentHandler:
 
     # Assuming ConsentHandler doesn't need its own logger instance for now,
     # as errors are typically logged by the calling function (OAuthFlow).
-    # If needed, we can add a logger parameter here too.
-    def __init__(self, admin_url: str, subject: str, session_data: Dict[str, Any]):
+    def __init__(self, admin_url: str, subject: str, session_data: Dict[str, Any], timeout: int = 10): # Added timeout
         self.admin_url = f"{admin_url.rstrip('/')}/admin"  # Add /admin to base URL
         self.subject = subject
         self.session_data = session_data
-        # If logging is needed within this class, add: self.logger = logger_instance
+        self.timeout = aiohttp.ClientTimeout(total=timeout) # Create timeout object
 
     @staticmethod
     def extract_challenge(url: str, challenge_type: str) -> Optional[str]:
@@ -67,7 +66,7 @@ class ConsentHandler:
 
     async def _get_login_request(self, challenge: str) -> Optional[dict]:
         """Get login request details"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.get(
                 f"{self.admin_url}/oauth2/auth/requests/login",
                 params={"login_challenge": challenge}
@@ -90,7 +89,7 @@ class ConsentHandler:
             "remember_for": remember_for
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.put(
                 f"{self.admin_url}/oauth2/auth/requests/login/accept",
                 params={"login_challenge": challenge},
@@ -103,7 +102,7 @@ class ConsentHandler:
 
     async def _get_consent_request(self, challenge: str) -> Optional[dict]:
         """Get consent request details"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.get(
                 f"{self.admin_url}/oauth2/auth/requests/consent",
                 params={"consent_challenge": challenge}
@@ -126,7 +125,7 @@ class ConsentHandler:
             "session": self.session_data
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.put(
                 f"{self.admin_url}/oauth2/auth/requests/consent/accept",
                 params={"consent_challenge": challenge},

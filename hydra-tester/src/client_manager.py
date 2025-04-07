@@ -8,10 +8,11 @@ from .utils.config import ClientConfig
 class ClientManager:
     """Manages Hydra OAuth2 clients"""
 
-    def __init__(self, admin_url: str, config: ClientConfig, logger): # Added logger param
+    def __init__(self, admin_url: str, config: ClientConfig, logger, timeout: int = 10): # Added timeout param
         self.admin_url = f"{admin_url.rstrip('/')}/admin"  # Add /admin to base URL
         self.config = config
         self.logger = logger # Store logger instance
+        self.timeout = aiohttp.ClientTimeout(total=timeout) # Create timeout object
         self.clients: Dict[str, dict] = {}
         self.clients_file = "output/clients.json"
 
@@ -24,7 +25,7 @@ class ClientManager:
             **self.config.model_dump()
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.post(
                 f"{self.admin_url}/clients",
                 json=client_data
@@ -41,7 +42,7 @@ class ClientManager:
 
     async def get_client(self, client_id: str) -> Optional[dict]:
         """Get client details by ID"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.get(
                 f"{self.admin_url}/clients/{client_id}"
             ) as response:
@@ -57,7 +58,7 @@ class ClientManager:
 
     async def delete_client(self, client_id: str) -> bool:
         """Delete a client by ID"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.delete(
                 f"{self.admin_url}/clients/{client_id}"
             ) as response:
