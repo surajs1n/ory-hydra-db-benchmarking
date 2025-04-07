@@ -50,11 +50,17 @@ class HydraTester:
         """Executes a single OAuth flow in its own event loop."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        full_history = [] # Accumulate history across repetitions
+        flow = None # Define flow outside loop to access save_token_history later
+
         try:
-            # Pass timeout from client_config to OAuthFlow
-            flow = OAuthFlow(
-                auth_url=client_config['auth_url'],
-                token_url=client_config['token_url'],
+            for i in range(self.args.flow_repeat_count):
+                self.logger.info(f"[Client {client_config['client_id']} Thread {thread_id}] Starting flow repetition {i+1}/{self.args.flow_repeat_count}")
+                
+                # Create a new flow instance for each repetition for clean state (PKCE etc.)
+                flow = OAuthFlow(
+                    auth_url=client_config['auth_url'],
+                    token_url=client_config['token_url'],
                 admin_url=client_config['admin_url'],
                 client_id=client_config['client_id'],
                 client_secret=client_config['client_secret'],
@@ -67,21 +73,32 @@ class HydraTester:
                 timeout=client_config['timeout'] # Pass timeout
             )
             
-            # Run the auth flow
-            tokens = loop.run_until_complete(flow.run_auth_flow())
-            
-            # Run refresh cycle if needed
-            if client_config['refresh_count'] > 0 and tokens:
-                loop.run_until_complete(flow.run_refresh_cycle(
-                    tokens.get('refresh_token'), # Use .get for safety
-                    client_config['refresh_count'],
-                    client_config['refresh_interval']
-                ))
-            
-            # Save history (already thread-safe per file)
-            flow.save_token_history()
-            self.logger.info(f"[Client {client_config['client_id']} Thread {thread_id}] Flow completed successfully.") # Use self.logger
-            
+                # Run the auth flow
+                tokens = loop.run_until_complete(flow.run_auth_flow())
+                
+                # Run refresh cycle if needed
+                if client_config['refresh_count'] > 0 and tokens:
+                    loop.run_until_complete(flow.run_refresh_cycle(
+                        tokens.get('refresh_token'), # Use .get for safety
+                        client_config['refresh_count'],
+                        client_config['refresh_interval']
+                    ))
+                
+                # Accumulate history from this repetition
+                if hasattr(flow, 'thread_local') and hasattr(flow.thread_local, 'token_history'):
+                     full_history.extend(flow.thread_local.token_history)
+                     # Clear the flow's internal history for the next loop (if reusing instance, but we are not)
+                     # flow.thread_local.token_history = [] 
+                
+                self.logger.info(f"[Client {client_config['client_id']} Thread {thread_id}] Flow repetition {i+1} completed successfully.")
+
+            # After all repetitions, save the accumulated history once
+            if flow: # Ensure flow was initialized
+                 # Temporarily assign full history to the last flow instance for saving
+                 flow.thread_local.token_history = full_history 
+                 flow.save_token_history() 
+            self.logger.info(f"[Client {client_config['client_id']} Thread {thread_id}] All {self.args.flow_repeat_count} flow repetitions completed.")
+
         except Exception as e:
             # Log timeout errors specifically if possible
             if isinstance(e, asyncio.TimeoutError):
@@ -253,6 +270,12 @@ def parse_args():
         type=int,
         default=10,
         help="HTTP request timeout in seconds"
+    )
+    parser.add_argument(
+        "--flow-repeat-count",
+        type=int,
+        default=1,
+        help="Number of times each thread repeats the full auth flow + refresh cycle"
     )
 
     args = parser.parse_args()
