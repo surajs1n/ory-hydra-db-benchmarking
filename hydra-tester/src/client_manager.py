@@ -97,9 +97,4 @@ class ClientManager:
             self.logger.warning(f"No clients file found at {self.clients_file}") # Use self.logger
         return self.clients
 
-    async def cleanup_clients(self) -> None:
-        """Delete all managed clients"""
-        for client_id in list(self.clients.keys()):
-            await self.delete_client(client_id)
-        self.clients = {}
-        self.logger.info("All clients cleaned up") # Use self.logger
+    # Removed cleanup_clients method

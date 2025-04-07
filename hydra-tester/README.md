@@ -67,7 +67,7 @@ Custom configuration with concurrent execution and repetition:
 | `--config` | Path to config file | config/default_config.json |
 | `--log-file` | Path to log file | None (console only) |
 | `--verbose` | Enable verbose logging | False |
-| `--cleanup` | Clean up clients after test | False |
+# Removed cleanup option
 
 ### Configuration File
 

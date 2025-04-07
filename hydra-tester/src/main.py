@@ -151,24 +151,7 @@ class HydraTester:
         
         self.logger.info(f"All {total_threads_required} flows have completed.") # Use self.logger
 
-    # Note: cleanup needs to be synchronous if called after thread pool
-    def cleanup(self) -> None:
-        """Clean up resources"""
-        if self.args.cleanup:
-            self.logger.section("Cleaning up clients") # Use self.logger
-            # ClientManager cleanup might need adjustment if it uses async internally
-            # For now, assume it can be called synchronously or adapt it.
-            # If client_manager uses async internally, we might need to run its cleanup
-            # in a separate event loop.
-            try:
-                # Assuming cleanup can run synchronously for now
-                # If create_clients was async, load_clients might be sufficient if state is saved
-                # Or we need an async version of cleanup
-                asyncio.run(self.client_manager.cleanup_clients()) 
-                self.logger.info("Client cleanup completed.") # Use self.logger
-            except Exception as e:
-                 self.logger.error(f"Client cleanup failed: {e}") # Use self.logger
-
+    # Removed cleanup(self) method
 
     def run(self) -> None:
         """Run the complete test cycle"""
@@ -197,9 +180,7 @@ class HydraTester:
             # Consider how to gracefully shut down the thread pool here if needed
         except Exception as e:
             self.logger.error(f"Test run failed: {e}", exc_info=self.args.verbose) # Use self.logger
-        finally:
-            # Run cleanup synchronously after thread pool finishes
-            self.cleanup()
+        # Removed finally block with cleanup call
 
 def parse_args():
     """Parse command line arguments"""
@@ -254,11 +235,7 @@ def parse_args():
         action="store_true",
         help="Enable verbose logging"
     )
-    parser.add_argument(
-        "--cleanup",
-        action="store_true",
-        help="Clean up clients after test"
-    )
+    # Removed --cleanup argument
     parser.add_argument(
         "--threads-per-client",
         type=int,
