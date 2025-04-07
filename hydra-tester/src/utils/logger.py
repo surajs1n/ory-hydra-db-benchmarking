@@ -130,9 +130,10 @@ class ThreadSafeLogger:
         if self._thread.is_alive():
             self._thread.join()
 
-# Create default logger instance
-logger = ThreadSafeLogger()
+# Remove the global instance creation here
+# logger = ThreadSafeLogger() 
 
+# Keep get_logger function to be called from main
 def get_logger(
     name: str = "hydra-tester",
     level: str = "INFO",

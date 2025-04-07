@@ -22,7 +22,7 @@ def test_imports():
         from src.client_manager import ClientManager
         from src.consent_handler import ConsentHandler
         from src.oauth_flow import OAuthFlow
-        from src.parallel_flow import ParallelOAuthFlow
+        # from src.parallel_flow import ParallelOAuthFlow # Removed
         from src.main import HydraTester
         print("✅ All modules imported successfully")
         return True
@@ -92,39 +92,7 @@ def test_oauth_flow():
         print(f"❌ OAuth flow error: {e}")
         return False
 
-def test_parallel_flow():
-    """Test parallel OAuth flow configuration"""
-    print("Testing parallel OAuth flow configuration...")
-    try:
-        from src.parallel_flow import ParallelOAuthFlow
-        
-        # Test client config
-        client_config = {
-            'auth_url': "http://localhost:4444",
-            'token_url': "http://localhost:4444",
-            'admin_url': "http://localhost:4445",
-            'client_id': "test-client",
-            'client_secret': "test-secret",
-            'redirect_uri': "http://localhost/callback",
-            'scope': "openid",
-            'subject': "test-user",
-            'session_data': {},
-            'refresh_count': 5,
-            'refresh_interval': 60
-        }
-        
-        # Initialize parallel flow with 2 threads
-        parallel_flow = ParallelOAuthFlow(client_config, 2)
-        
-        print("✅ Parallel OAuth flow initialized successfully")
-        print("  - Thread-safe token file handling")
-        print("  - Thread-local storage for session data")
-        print("  - Thread pool executor configuration")
-        print("  - Thread-specific logging setup")
-        return True
-    except Exception as e:
-        print(f"❌ Parallel OAuth flow error: {e}")
-        return False
+# Removed test_parallel_flow as the class was deleted
 
 def test_thread_safety():
     """Test thread safety mechanisms"""
@@ -169,8 +137,8 @@ def main():
         test_config,
         test_pkce,
         test_oauth_flow,
-        test_parallel_flow,  # Add new test
-        test_thread_safety,  # Add new test
+        # test_parallel_flow, # Removed
+        test_thread_safety,
         test_output_dirs
     ]
     

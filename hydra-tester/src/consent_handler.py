@@ -1,15 +1,18 @@
 import aiohttp
 from typing import Dict, Any, Optional, Tuple, List
 from urllib.parse import urlparse, parse_qs
-from .utils.logger import logger
+# from .utils.logger import logger # Removed global logger import
 
 class ConsentHandler:
     """Handles Hydra login and consent flows"""
 
-    def __init__(self, admin_url: str, subject: str, session_data: Dict[str, Any]):
+    # Assuming ConsentHandler doesn't need its own logger instance for now,
+    # as errors are typically logged by the calling function (OAuthFlow).
+    def __init__(self, admin_url: str, subject: str, session_data: Dict[str, Any], timeout: int = 10): # Added timeout
         self.admin_url = f"{admin_url.rstrip('/')}/admin"  # Add /admin to base URL
         self.subject = subject
         self.session_data = session_data
+        self.timeout = aiohttp.ClientTimeout(total=timeout) # Create timeout object
 
     @staticmethod
     def extract_challenge(url: str, challenge_type: str) -> Optional[str]:
@@ -20,7 +23,8 @@ class ConsentHandler:
             challenge = params.get(f"{challenge_type}_challenge", [None])[0]
             return challenge
         except Exception as e:
-            logger.error(f"Failed to extract {challenge_type} challenge: {e}")
+            # Log errors from the calling context (OAuthFlow) which has the logger
+            print(f"Error extracting {challenge_type} challenge: {e}") # Basic print for now
             return None
 
     async def handle_login_challenge(self, challenge: str) -> Dict[str, Any]:
@@ -62,14 +66,13 @@ class ConsentHandler:
 
     async def _get_login_request(self, challenge: str) -> Optional[dict]:
         """Get login request details"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.get(
                 f"{self.admin_url}/oauth2/auth/requests/login",
                 params={"login_challenge": challenge}
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to get login request: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
 
@@ -86,28 +89,26 @@ class ConsentHandler:
             "remember_for": remember_for
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.put(
                 f"{self.admin_url}/oauth2/auth/requests/login/accept",
                 params={"login_challenge": challenge},
                 json=data
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to accept login: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
 
     async def _get_consent_request(self, challenge: str) -> Optional[dict]:
         """Get consent request details"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.get(
                 f"{self.admin_url}/oauth2/auth/requests/consent",
                 params={"consent_challenge": challenge}
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to get consent request: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
 
@@ -124,14 +125,13 @@ class ConsentHandler:
             "session": self.session_data
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session: # Apply timeout
             async with session.put(
                 f"{self.admin_url}/oauth2/auth/requests/consent/accept",
                 params={"consent_challenge": challenge},
                 json=data
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Failed to accept consent: {error_text}")
+                    # Error should be logged by the caller
                     return None
                 return await response.json()
