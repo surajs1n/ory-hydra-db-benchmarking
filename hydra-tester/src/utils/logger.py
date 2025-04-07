@@ -124,11 +124,20 @@ class ThreadSafeLogger:
             msg += str(data)
         self._enqueue(logging.INFO, msg)
 
-    def __del__(self):
-        """Cleanup on deletion"""
+    def flush(self):
+        """Flush all queued messages and wait for them to be processed"""
+        # Add a sentinel message to mark the end
         self._queue.put(None)
+        # Wait for the thread to process all messages
         if self._thread.is_alive():
             self._thread.join()
+        # Create a new thread for future messages
+        self._thread = threading.Thread(target=self._logger_thread, daemon=True)
+        self._thread.start()
+
+    def __del__(self):
+        """Cleanup on deletion"""
+        self.flush()
 
 # Remove the global instance creation here
 # logger = ThreadSafeLogger() 

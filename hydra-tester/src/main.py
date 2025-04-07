@@ -3,6 +3,9 @@ import asyncio
 import os
 import asyncio
 import threading
+import time
+import json
+from datetime import datetime
 from typing import List, Dict
 import signal
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -30,6 +33,11 @@ class HydraTester:
             self.logger, # Pass logger instance
             self.args.timeout # Pass timeout
         )
+        # Add timing and statistics tracking
+        self.start_time = None
+        self.end_time = None
+        self.success_count = 0
+        self.failure_count = 0
 
     async def setup_clients(self) -> None:
         """Set up OAuth2 clients"""
@@ -45,6 +53,40 @@ class HydraTester:
         clients = await self.client_manager.create_clients(self.args.clients)
         self.client_manager.save_clients()
         return clients
+
+    def log_experiment_summary(self):
+        """Log comprehensive experiment summary"""
+        try:
+            self.logger.debug("Generating experiment summary...")  # Debug log
+            duration = self.end_time - self.start_time
+            total_flows = self.args.clients * self.args.threads_per_client * self.args.flow_repeat_count
+            
+            summary = {
+                "experiment_duration_seconds": duration,
+                "start_time": datetime.fromtimestamp(self.start_time).isoformat(),
+                "end_time": datetime.fromtimestamp(self.end_time).isoformat(),
+                "configuration": {
+                    "clients": self.args.clients,
+                    "threads_per_client": self.args.threads_per_client,
+                    "flow_repeat_count": self.args.flow_repeat_count,
+                    "refresh_count": self.args.refresh_count,
+                    "refresh_interval": self.args.refresh_interval,
+                    "timeout": self.args.timeout
+                },
+                "results": {
+                    "total_flows_attempted": total_flows,
+                    "successful_flows": self.success_count,
+                    "failed_flows": self.failure_count,
+                    "success_rate": f"{(self.success_count/total_flows)*100:.2f}%"
+                }
+            }
+            
+            # Use both logger and direct console output
+            self.logger.section("Experiment Summary")
+            self.logger.json(summary, "Experiment Summary")
+        except Exception as e:
+            self.logger.error(f"Failed to generate experiment summary: {e}", exc_info=True)
+            print(f"Error generating summary: {e}")
 
     def _execute_single_flow(self, client_config: Dict, thread_id: int):
         """Executes a single OAuth flow in its own event loop."""
@@ -84,6 +126,8 @@ class HydraTester:
                         client_config['refresh_interval']
                     ))
                 
+                self.success_count += 1  # Increment on successful completion
+                
                 # Accumulate history from this repetition
                 if hasattr(flow, 'thread_local') and hasattr(flow.thread_local, 'token_history'):
                      full_history.extend(flow.thread_local.token_history)
@@ -98,8 +142,8 @@ class HydraTester:
                  flow.thread_local.token_history = full_history 
                  flow.save_token_history() 
             self.logger.info(f"[Client {client_config['client_id']} Thread {thread_id}] All {self.args.flow_repeat_count} flow repetitions completed.")
-
         except Exception as e:
+            self.failure_count += 1  # Increment on failure
             # Log timeout errors specifically if possible
             if isinstance(e, asyncio.TimeoutError):
                  self.logger.error(f"[Client {client_config['client_id']} Thread {thread_id}] Flow execution TIMED OUT after {client_config['timeout']} seconds.")
@@ -155,6 +199,7 @@ class HydraTester:
 
     def run(self) -> None:
         """Run the complete test cycle"""
+        self.start_time = time.time()
         try:
             # --- Clear local client cache before setup ---
             client_cache_file = "output/clients.json"
@@ -180,7 +225,11 @@ class HydraTester:
             # Consider how to gracefully shut down the thread pool here if needed
         except Exception as e:
             self.logger.error(f"Test run failed: {e}", exc_info=self.args.verbose) # Use self.logger
-        # Removed finally block with cleanup call
+        finally:
+            self.end_time = time.time()
+            self.log_experiment_summary()
+            # Ensure all log messages are processed
+            self.logger.flush()
 
 def parse_args():
     """Parse command line arguments"""
@@ -304,6 +353,8 @@ def main():
          # Use the tester's logger if available, otherwise print
          log_func = tester.logger.critical if hasattr(tester, 'logger') else print
          log_func(f"Unhandled exception in main execution: {e}", exc_info=True)
+         if hasattr(tester, 'logger'):
+             tester.logger.flush()
 
 if __name__ == "__main__":
     main()
